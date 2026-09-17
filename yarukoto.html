@@ -428,9 +428,9 @@ let cfg={names:['おにいちゃん','いもうと'],
   tasks:[ALL.map(t=>t.id),ALL.map(t=>t.id)],custom:[],coin:10,sound:true,bgm:true};
 const defEq=()=>({W:'W1',F:'F1',D:'D1',C:'C1',S:'S1',K:'K1',P:'P1',H:'H1',E:'E1'});
 const defOwn=()=>['W1','F1','D1','C1','S1','K1','P1','H1','E1'];
-let st={date:'',left:[[],[]],coin:[0,0],mode:[0,0],
+let st={date:'',left:[[],[]],used:[[],[]],coin:[0,0],mode:[0,0],
         own:[defOwn(),defOwn()],eq:[defEq(),defEq()]};
-let cur=0, edit=0, pending=[null,null], busy=false, view=0, shopCat='W';
+let cur=0, edit=0, pending=[null,null], pendSlot=[null,null], busy=false, view=0, shopCat='W';
 
 const $=id=>document.getElementById(id);
 const today=()=>new Date().toLocaleDateString('sv-SE');
@@ -648,6 +648,8 @@ function playHug(){
 function leftIds(k){return st.left[k];}
 function draw(k){
   const l=leftIds(k);
+  /* その日の 1かいめは かならず シャワー */
+  if(l.length===cfg.tasks[k].length && l.includes('shower')) return find('shower');
   return find(l[Math.floor(Math.random()*l.length)]);
 }
 
@@ -674,9 +676,10 @@ function renderStage(){
   }
   if(st.mode[k]===0){
     $('stageTtl').textContent=`カードを 1まい えらんでね（のこり ${left.length}まい）`;
+    const used=st.used[k]||[];
     $('stageBody').innerHTML=`<div class="cards" id="cards">`+
       cfg.tasks[k].map((id,i)=>{
-        const gone=!left.includes(id);
+        const gone=used.includes(i);
         return `<button class="card ${gone?'done':''}" data-i="${i}">
           <div class="inner"><div class="f">${gone?'✅':'?'}</div><div class="b"></div></div></button>`;
       }).join('')+`</div>`;
@@ -747,6 +750,7 @@ document.addEventListener('click',async e=>{
   if(c.classList.contains('done'))return;
   busy=true;
   const t=draw(cur), tier=tierOf(t);
+  pendSlot[cur]=+c.dataset.i;
   c.querySelector('.b').textContent=t.ico;
   if(tier){c.classList.add(tier===2?'hot':'cool');await preShow(tier);c.classList.remove('hot','cool');}
   c.classList.add('flip');
@@ -800,6 +804,12 @@ async function accept(){
   const t=pending[cur];pending[cur]=null;
   if(t){
     st.left[cur]=st.left[cur].filter(id=>id!==t.id);
+    let slot=pendSlot[cur];pendSlot[cur]=null;
+    if(slot==null){                      /* ガチャで ひいたとき */
+      const free=cfg.tasks[cur].map((_,i)=>i).filter(i=>!st.used[cur].includes(i));
+      slot=free[Math.floor(Math.random()*free.length)];
+    }
+    if(slot!=null&&!st.used[cur].includes(slot))st.used[cur].push(slot);
     st.coin[cur]+=cfg.coin;
     chime([880,1174]);
     await save('yr:st',st);
@@ -852,7 +862,7 @@ $('resetBox').onclick=async e=>{
   $('resetBox').classList.remove('show');
   if(b.dataset.r==='no')return;
   pending[cur]=null;busy=false;fxClear();
-  st.left[cur]=[...cfg.tasks[cur]];
+  st.left[cur]=[...cfg.tasks[cur]];st.used[cur]=[];pendSlot[cur]=null;
   if(b.dataset.r==='coin')st.coin[cur]=0;
   await save('yr:st',st);render();tone(440,0,.12);
 };
@@ -893,6 +903,7 @@ $('sheet').addEventListener('click',async e=>{
     if(cfg.tasks[edit].length<=2)return;
     cfg.tasks[edit]=cfg.tasks[edit].filter(x=>x!==id);
     st.left[edit]=st.left[edit].filter(x=>x!==id);
+    st.used[edit]=[];
     if(pending[edit]&&pending[edit].id===id)pending[edit]=null;
   }else{
     cfg.tasks[edit].push(id);
@@ -909,8 +920,9 @@ $('sheet').addEventListener('click',async e=>{
   if(!st.coin)st.coin=[0,0];
   if(!st.own)st.own=[defOwn(),defOwn()];
   if(!st.eq)st.eq=[defEq(),defEq()];
+  if(!st.used)st.used=[[],[]];
   if(st.date!==today()){
-    st.date=today();st.left=[[...cfg.tasks[0]],[...cfg.tasks[1]]];
+    st.date=today();st.left=[[...cfg.tasks[0]],[...cfg.tasks[1]]];st.used=[[],[]];
     await save('yr:st',st);
   }
   st.left=st.left.map((l,i)=>l.filter(id=>cfg.tasks[i].includes(id)));
